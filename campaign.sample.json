@@ -1,0 +1,8 @@
+{
+  "campaign_id": "summer_refresh_2026",
+  "products": ["SKU_101_Lemon", "SKU_102_Berry"],
+  "target_region": "AE",
+  "target_audience": "Urban millennials seeking premium hydration",
+  "campaign_message": "Refresh your summer with ultimate flavor.",
+  "color_palette": ["#1d4ed8", "#06b6d4", "#f97316"]
+}
