@@ -5,4 +5,4 @@ pydantic
 langchain
 langgraph
 strawberry-graphql[fastapi]
-pillow
+google-cloud-aiplatform

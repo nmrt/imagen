@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+from enum import Enum
 from typing import Dict, List
 from uuid import UUID
 
@@ -34,3 +36,19 @@ class GenerationResult(BaseModel):
     products: List[ProductResult]
     zip_path: str
     manifest_path: str
+
+
+class JobStatus(str, Enum):
+    queued = "queued"
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
+
+
+class JobResult(BaseModel):
+    job_id: str
+    status: JobStatus
+    created_at: datetime
+    updated_at: datetime
+    result: GenerationResult | None = None
+    error: str | None = None

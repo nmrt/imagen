@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-import textwrap
+import os
 from pathlib import Path
 from typing import Dict, List, TypedDict
 
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import END, START, StateGraph
-from PIL import Image, ImageDraw, ImageFont
+from vertexai import init as vertex_init
+from vertexai.preview.vision_models import ImageGenerationModel
 
 from .schemas import CampaignBrief
 
 
-ASPECTS: Dict[str, tuple[int, int]] = {
-    "1x1": (1024, 1024),
-    "9x16": (1080, 1920),
-    "16x9": (1920, 1080),
+ASPECTS: Dict[str, str] = {
+    "1x1": "1:1",
+    "9x16": "9:16",
+    "16x9": "16:9",
 }
 
 
@@ -23,6 +24,7 @@ class AgentState(TypedDict):
     image_paths: List[Path]
     output_dir: Path
     prompt_map: Dict[str, str]
+    source_context: str
     rendered: Dict[str, Dict[str, str]]
 
 
@@ -42,53 +44,72 @@ def _create_prompts(state: AgentState) -> AgentState:
         )
         prompt_map[product] = messages[0].content
     state["prompt_map"] = prompt_map
+    if state["image_paths"]:
+        state["source_context"] = (
+            "Reference source images were uploaded and should be used as stylistic guidance "
+            "for color, composition, and product framing."
+        )
+    else:
+        state["source_context"] = "No reference images were uploaded."
     return state
 
 
+class ImagenClient:
+    def __init__(self) -> None:
+        project = os.getenv("VERTEX_PROJECT_ID")
+        location = os.getenv("VERTEX_LOCATION", "us-central1")
+        model_name = os.getenv("VERTEX_IMAGEN_MODEL", "imagen-3.0-generate-002")
+        print(f"Project: {project}, Location: {location}, Model: {model_name}")
+        if not project:
+            raise RuntimeError("Set VERTEX_PROJECT_ID before generating with Imagen.")
+        vertex_init(project=project, location=location)
+        self.model = ImageGenerationModel.from_pretrained(model_name)
+
+    def generate(self, prompt: str, aspect_ratio: str, output_path: Path) -> None:
+        print(f"ImagenClient.generate: {prompt}, aspect_ratio: {aspect_ratio}, output_path: {output_path}")
+        result = self.model.generate_images(
+            prompt=prompt,
+            number_of_images=1,
+            aspect_ratio=aspect_ratio,
+            safety_filter_level="block_some",
+            person_generation="allow_adult",
+            negative_prompt="",
+            guidance_scale=7, # 10+ for stricter prompt adherence
+        )
+        if not result.images:
+            raise RuntimeError("Imagen returned no images.")
+        result.images[0].save(location=str(output_path))
+
+
 def _render_images(state: AgentState) -> AgentState:
+    print(f"_render_images state: {state}")
     brief = state["brief"]
-    image_paths = state["image_paths"]
     output_dir = state["output_dir"]
     prompt_map = state["prompt_map"]
+    source_context = state["source_context"]
     rendered: Dict[str, Dict[str, str]] = {}
 
-    source_image = None
-    if image_paths:
-        source_image = Image.open(image_paths[0]).convert("RGB")
-
-    font = ImageFont.load_default()
+    imagen = ImagenClient()
     for product in brief.products:
         product_slug = product.lower().replace(" ", "_")
         product_dir = output_dir / product_slug
         product_dir.mkdir(parents=True, exist_ok=True)
         rendered[product] = {}
 
-        for aspect_name, size in ASPECTS.items():
-            if source_image:
-                canvas = source_image.resize(size)
-            else:
-                palette = brief.color_palette or ["#1f3a8a", "#0f172a"]
-                base = Image.new("RGB", size, palette[0])
-                overlay = Image.new("RGB", size, palette[-1])
-                canvas = Image.blend(base, overlay, alpha=0.33)
-
-            draw = ImageDraw.Draw(canvas)
-            headline = textwrap.fill(brief.campaign_message, width=28)
-            subtitle = textwrap.fill(prompt_map[product], width=48)
-            draw.rectangle([(32, 32), (size[0] - 32, size[1] // 2)], fill=(0, 0, 0, 140))
-            draw.multiline_text((56, 56), headline, fill="white", font=font, spacing=6)
-            draw.multiline_text(
-                (56, 180), f"Product: {product}\n{subtitle}", fill="white", font=font, spacing=5
-            )
-            draw.rectangle(
-                [(56, size[1] - 120), (380, size[1] - 64)],
-                fill=(255, 255, 255),
-            )
-            draw.text((74, size[1] - 104), "Shop now", fill=(0, 0, 0), font=font)
-
+        for aspect_name, aspect_ratio in ASPECTS.items():
             filename = f"{product_slug}_{aspect_name}.png"
             output_path = product_dir / filename
-            canvas.save(output_path, format="PNG")
+            prompt = (
+                f"{prompt_map[product]} "
+                f"Campaign message: {brief.campaign_message}. "
+                f"Product SKU: {product}. "
+                f"Target region: {brief.target_region}. "
+                f"Use brand colors {brief.color_palette}. "
+                f"{source_context}. "
+                "Create a social ad background with clean composition and realistic lighting. "
+                "Leave clear negative space for headline and CTA overlay."
+            )
+            imagen.generate(prompt=prompt, aspect_ratio=aspect_ratio, output_path=output_path)
             rendered[product][aspect_name] = str(output_path)
 
     state["rendered"] = rendered
