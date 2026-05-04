@@ -16,12 +16,12 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-export VERTEX_PROJECT_ID="your-gcp-project-id"
+export VERTEX_PROJECT_ID="gcp-project-id"
 export VERTEX_LOCATION="us-central1" # optional
 export VERTEX_IMAGEN_MODEL="imagen-3.0-generate-002" # optional
 
 gcloud auth application-default login
-gcloud auth application-default set-quota-project YOUR_PROJECT_ID
+gcloud auth application-default set-quota-project $VERTEX_PROJECT_ID
 
 uvicorn app.main:app --reload
 ```

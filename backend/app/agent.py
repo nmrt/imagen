@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
-from typing import Dict, List, TypedDict
+from typing import Dict, List
+from typing_extensions import TypedDict
+from pydantic import TypeAdapter
 
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import END, START, StateGraph
@@ -58,7 +61,8 @@ class ImagenClient:
     def __init__(self) -> None:
         project = os.getenv("VERTEX_PROJECT_ID")
         location = os.getenv("VERTEX_LOCATION", "us-central1")
-        model_name = os.getenv("VERTEX_IMAGEN_MODEL", "imagen-3.0-generate-002")
+        # gemini-3-pro-image-preview
+        model_name = os.getenv("VERTEX_IMAGEN_MODEL", "imagen-4.0-generate-001") # imagen-3.0-generate-002
         print(f"Project: {project}, Location: {location}, Model: {model_name}")
         if not project:
             raise RuntimeError("Set VERTEX_PROJECT_ID before generating with Imagen.")
@@ -82,7 +86,8 @@ class ImagenClient:
 
 
 def _render_images(state: AgentState) -> AgentState:
-    print(f"_render_images state: {state}")
+    adapter = TypeAdapter(AgentState)
+    print(f"_render_images state: {adapter.dump_json(state, indent=2).decode('utf-8')}")
     brief = state["brief"]
     output_dir = state["output_dir"]
     prompt_map = state["prompt_map"]
@@ -107,7 +112,8 @@ def _render_images(state: AgentState) -> AgentState:
                 f"Use brand colors {brief.color_palette}. "
                 f"{source_context}. "
                 "Create a social ad background with clean composition and realistic lighting. "
-                "Leave clear negative space for headline and CTA overlay."
+                "Leave clear negative space for headline and CTA overlay. "
+                "Localize the message to the target region."
             )
             imagen.generate(prompt=prompt, aspect_ratio=aspect_ratio, output_path=output_path)
             rendered[product][aspect_name] = str(output_path)
