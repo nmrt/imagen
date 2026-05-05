@@ -6,4 +6,5 @@ langchain
 langgraph
 strawberry-graphql[fastapi]
 google-cloud-aiplatform
+google-genai>=1.0.0
 Pillow
